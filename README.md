@@ -10,3 +10,5 @@ A full-stack project with a backend API and frontend client.
 
 ## Getting Started
 TBD
+
+Testing cached token.
