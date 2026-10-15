@@ -188,16 +188,33 @@ async function matchInvoice(invoice, statementId) {
   }
 
   // Case: nothing matched → NOT_FOUND (but return closest for evidence)
-  return {
-    verdict: 'NOT_FOUND',
-    confidence: 0.1,
-    evidence: {
-      reason: 'No matching transaction found within tolerance',
-      matchedRows: [],
-      closestRows: scored.slice(0, 3).map((s) => formatRow(s.txn, s)),
-      searchWindow,
-    },
-  };
+  
+  // Case: nothing matched
+// If client claimed "paid" but no match → CONTRADICTED
+// Otherwise → NOT_FOUND
+const clientClaimedPaid = 
+  (invoice.notes || '').toLowerCase().includes('paid') || 
+  invoice.status === 'paid';
+
+const finalVerdict = clientClaimedPaid ? 'CONTRADICTED' : 'NOT_FOUND';
+const finalReason = clientClaimedPaid
+  ? 'Client claimed payment but no matching transaction found in statement'
+  : 'No matching transaction found within tolerance';
+
+return {
+  verdict: finalVerdict,
+  confidence: clientClaimedPaid ? 0.6 : 0.1,
+  evidence: {
+    reason: finalReason,
+    matchedRows: [],
+    closestRows: scored.slice(0, 3).map((s) => formatRow(s.txn, s)),
+    searchWindow,
+  },
+};
+
+
+
+
 }
 
 /**
