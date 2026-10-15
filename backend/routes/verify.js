@@ -1,0 +1,105 @@
+// backend/routes/verify.js
+// API for verifying invoices against statements
+
+const express = require('express');
+const router = express.Router();
+
+const Invoice = require('../models/Invoice');
+const Verification = require('../models/Verification');
+const { matchInvoice } = require('../services/matchInvoice');
+
+/**
+ * POST /api/verify
+ * Body: { invoiceId, statementId }
+ * Returns: { verdict, confidence, evidence }
+ */
+router.post('/', async (req, res) => {
+  try {
+    const { invoiceId, statementId } = req.body;
+
+    if (!invoiceId || !statementId) {
+      return res.status(400).json({
+        error: 'Missing required fields: invoiceId, statementId',
+      });
+    }
+
+    // Load invoice
+    const invoice = await Invoice.findById(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    // Run matching
+    const result = await matchInvoice(invoice, statementId);
+
+    // Save verification
+    const verification = await Verification.create({
+      invoiceId: invoice._id,
+      statementId,
+      verdict: result.verdict,
+      confidence: result.confidence,
+      evidence: result.evidence,
+    });
+
+    // Update invoice status based on verdict
+    if (result.verdict === 'VERIFIED') {
+      invoice.status = 'paid';
+      await invoice.save();
+    } else if (result.verdict === 'DUPLICATE' || result.verdict === 'CONTRADICTED') {
+      invoice.status = 'disputed';
+      await invoice.save();
+    }
+
+    res.json({
+      ok: true,
+      verificationId: verification._id,
+      invoiceId: invoice._id,
+      statementId,
+      verdict: result.verdict,
+      confidence: result.confidence,
+      evidence: result.evidence,
+    });
+  } catch (err) {
+    console.error('POST /verify error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/verify
+ * List all verifications (newest first)
+ */
+router.get('/', async (req, res) => {
+  try {
+    const list = await Verification.find()
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .populate('invoiceId', 'clientName amount')
+      .lean();
+
+    res.json(list);
+  } catch (err) {
+    console.error('GET /verify error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/verify/:id
+ * Get one verification by ID
+ */
+router.get('/:id', async (req, res) => {
+  try {
+    const v = await Verification.findById(req.params.id)
+      .populate('invoiceId', 'clientName amount issueDate')
+      .lean();
+
+    if (!v) return res.status(404).json({ error: 'Verification not found' });
+    res.json(v);
+  } catch (err) {
+    console.error('GET /verify/:id error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;

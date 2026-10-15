@@ -3,7 +3,13 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
+// Load models — register with Mongoose
+require('./models/Statement');
+require('./models/Invoice');
+require('./models/Verification');
+
 const app = express();
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
@@ -22,6 +28,16 @@ app.get('/api/health', (req, res) => {
     db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
   });
 });
+
+// TEMPORARY — models test route (remove before production)
+app.get('/api/_models', (req, res) => {
+  res.json({ models: mongoose.modelNames() });
+});
+
+// Routes
+app.use('/api', require('./routes/statements'));
+app.use('/api/invoices', require('./routes/invoices'));
+app.use('/api/verify', require('./routes/verify'));
 
 // Connect to MongoDB
 mongoose
