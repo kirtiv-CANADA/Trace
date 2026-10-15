@@ -3,9 +3,10 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * Detects bank format from CSV headers.
+ * Detects bank format from CSV headers + sample date.
+ * Both RBC and TD share the same headers, so we use the date format to distinguish.
  */
-function detectBank(headers) {
+function detectBank(headers, sampleDate) {
   const h = headers.map((x) => String(x).toLowerCase().trim());
 
   if (
@@ -15,8 +16,16 @@ function detectBank(headers) {
     h.includes('credit') &&
     h.includes('balance')
   ) {
-    return 'RBC';
+    // RBC uses MM/DD/YYYY, TD uses YYYY-MM-DD
+    if (sampleDate && /^\d{4}-\d{2}-\d{2}$/.test(String(sampleDate).trim())) {
+      return 'TD';
+    }
+    if (sampleDate && /^\d{2}\/\d{2}\/\d{4}$/.test(String(sampleDate).trim())) {
+      return 'RBC';
+    }
+    return 'RBC'; // default fallback
   }
+
   return 'UNKNOWN';
 }
 
@@ -74,10 +83,17 @@ async function parseStatement(filePath) {
   const rows = parsed.data;
   const headers = parsed.meta.fields || [];
 
-  const bank = detectBank(headers);
+  // Handle empty CSV
+  if (!rows || rows.length === 0) {
+    throw new Error('CSV file is empty or has no data rows');
+  }
+
+  // Detect bank + date format from the first row
   const firstDate = rows[0]?.Date || rows[0]?.date || '';
+  const bank = detectBank(headers, firstDate);
   const dateFormat = detectDateFormat(firstDate) || 'MM/DD/YYYY';
 
+  // Normalize transactions
   const transactions = rows.map((row) => {
     const date = parseDate(row.Date || row.date, dateFormat);
     const description = (row.Description || row.description || '').trim();
@@ -100,6 +116,7 @@ async function parseStatement(filePath) {
     return { date, description, amount, balance, type, raw: row };
   });
 
+  // Compute statement period
   const dates = transactions
     .map((t) => t.date)
     .filter((d) => d instanceof Date && !isNaN(d))
@@ -119,4 +136,10 @@ async function parseStatement(filePath) {
   };
 }
 
-module.exports = { parseStatement, detectBank, detectDateFormat, parseDate, parseAmount };
+module.exports = {
+  parseStatement,
+  detectBank,
+  detectDateFormat,
+  parseDate,
+  parseAmount,
+};

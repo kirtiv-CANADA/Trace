@@ -29,11 +29,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// TEMPORARY — models test route (remove before production)
-app.get('/api/_models', (req, res) => {
-  res.json({ models: mongoose.modelNames() });
-});
-
 // Routes
 app.use('/api', require('./routes/statements'));
 app.use('/api/invoices', require('./routes/invoices'));

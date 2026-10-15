@@ -19,14 +19,27 @@ router.post('/', async (req, res) => {
 
     if (!invoiceId || !statementId) {
       return res.status(400).json({
+        ok: false,
         error: 'Missing required fields: invoiceId, statementId',
       });
     }
 
-    // Load invoice
-    const invoice = await Invoice.findById(invoiceId);
+    // Load invoice — with graceful error for invalid IDs
+    let invoice;
+    try {
+      invoice = await Invoice.findById(invoiceId);
+    } catch (err) {
+      return res.status(400).json({
+        ok: false,
+        error: `Invalid invoice ID format: ${invoiceId}`,
+      });
+    }
+
     if (!invoice) {
-      return res.status(404).json({ error: 'Invoice not found' });
+      return res.status(404).json({
+        ok: false,
+        error: 'Invoice not found',
+      });
     }
 
     // Run matching
@@ -61,7 +74,7 @@ router.post('/', async (req, res) => {
     });
   } catch (err) {
     console.error('POST /verify error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
