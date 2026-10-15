@@ -38,6 +38,7 @@ app.get('/api/_models', (req, res) => {
 app.use('/api', require('./routes/statements'));
 app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/verify', require('./routes/verify'));
+app.use('/api/subscriptions', require('./routes/subscriptions'));
 
 // Connect to MongoDB
 mongoose
