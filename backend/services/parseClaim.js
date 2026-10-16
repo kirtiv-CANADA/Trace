@@ -53,13 +53,18 @@ Rules for claimsPaid (CRITICAL):
 - If unclear or the text doesn't discuss payment status → claimsPaid = null
 - NEVER set claimsPaid = true when the text contains a negation about payment.
 
-Rules for currency (IMPORTANT):
-- ₹ or "Rs" or "INR" → INR
-- $ → CAD (default for this app; USD only if "USD" or "US$" is explicit)
-- € → EUR
-- £ → GBP
-- If no currency symbol or code is present → null
-- Do NOT default to CAD unless a $ sign is present.
+Rules for currency (VERY IMPORTANT — follow strictly):
+- Look for the currency symbol or code in the claim text:
+  - "₹" or "Rs" or "Rs." or "INR" or "rupees" or "rupee" → "INR"
+  - "€" or "EUR" or "euros" → "EUR"
+  - "£" or "GBP" or "pounds" → "GBP"
+  - "US$" or "USD" or "US dollars" → "USD"
+  - "C$" or "CAD" or "Canadian dollars" → "CAD"
+  - "$" alone (no other context) → "CAD" (default for this Canadian-focused app)
+- If NO currency symbol or code appears → currency = null
+- If the currency symbol is unclear or garbled (e.g. "?" before a number), infer from context:
+  - "lakh" or "crore" or "Rs" nearby → "INR"
+- Never assume CAD without a $ sign.
 
 Rules for paidDate:
 - If a year is not mentioned, assume ${currentYear}.
@@ -72,14 +77,35 @@ Rules for paidDate:
 - If only month/year mentioned, use the 1st of that month.
 
 Other rules:
-- clientName: who sent the money (company or person name).
+- clientName: who sent the money (company or person name). Keep the original casing.
 - reference: invoice number or reference code (e.g. "INV-1001", "ABC123").
-- paymentMethod: "e-transfer", "wire", "cheque", "credit card", etc. if mentioned.
+- paymentMethod: "e-transfer", "wire", "cheque", "credit card", "PayPal", "bank transfer", etc. if mentioned.
 - confidence: 0.9+ explicit, 0.5 vague, 0.2 unclear.
-- warnings: array of strings. Use tags like "date_format_ambiguous", "currency_inferred", "relative_date_used", "amount_missing".
+- warnings: array of strings. Use tags like "date_format_ambiguous", "currency_inferred", "relative_date_used", "amount_missing", "clientName_missing".
 - Do NOT invent data. Only extract what is stated.
 
 Return ONLY the JSON object.`;
+}
+
+// ---------- Currency normalization helper ----------
+// Normalizes currency hints found directly in the claim text.
+// This runs as a safety net when the AI mislabels or misses currency.
+function inferCurrencyFromText(claimText) {
+  if (!claimText) return null;
+  const t = String(claimText);
+
+  // Indian rupee signals
+  if (/[₹]|\bRs\.?\b|\bINR\b|\brupees?\b|\blakhs?\b|\bcrores?\b/i.test(t)) return 'INR';
+  // Euro
+  if (/[€]|\bEUR\b|\beuros?\b/i.test(t)) return 'EUR';
+  // Pound
+  if (/[£]|\bGBP\b|\bpounds?\b/i.test(t)) return 'GBP';
+  // US dollar
+  if (/\bUSD\b|\bUS\$|\bUS\s*dollars?\b/i.test(t)) return 'USD';
+  // Canadian dollar (explicit)
+  if (/\bCAD\b|\bC\$/i.test(t)) return 'CAD';
+
+  return null;
 }
 
 // ---------- Groq (OpenAI-compatible API) ----------
@@ -193,15 +219,29 @@ async function parseClaim(claimText) {
     parsed = JSON.parse(match[0]);
   }
 
-  // ---------- Normalize ----------
+  // ---------- Normalize + post-processing ----------
   const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.slice() : [];
+
+  // Currency post-processing: override with text-derived currency if AI missed it
+  const textCurrency = inferCurrencyFromText(claimText);
+  let finalCurrency = parsed.currency || null;
+
+  if (!finalCurrency && textCurrency) {
+    finalCurrency = textCurrency;
+    warnings.push('currency_inferred');
+  } else if (finalCurrency && textCurrency && finalCurrency !== textCurrency) {
+    // AI said X, but text says Y — trust the text (it's what the client literally wrote)
+    warnings.push('currency_overridden');
+    finalCurrency = textCurrency;
+  }
+
   if (parsed.amount == null) warnings.push('amount_missing');
   if (!parsed.clientName && !parsed.payer) warnings.push('clientName_missing');
 
   return {
     clientName: parsed.clientName || parsed.payer || null,
     amount: typeof parsed.amount === 'number' ? parsed.amount : null,
-    currency: parsed.currency || null,
+    currency: finalCurrency,
     paidDate: parsed.paidDate || parsed.date || null,
     reference: parsed.reference || null,
     paymentMethod: parsed.paymentMethod || null,
@@ -217,4 +257,4 @@ async function parseClaim(claimText) {
   };
 }
 
-module.exports = { parseClaim };
+module.exports = { parseClaim, inferCurrencyFromText };

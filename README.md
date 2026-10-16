@@ -19,14 +19,15 @@ The language model reads claims and suggests fields. It is never the final word 
 
 ## Status
 
-🚧 Day 2 of 30 complete — backend core working.
+🚧 Day 3 of 30 complete — backend core working.
 
 **What's live:**
 - CSV parser (RBC + TD banks)
 - Invoice CRUD
 - Matching engine with 6 verdict types
 - Subscription detection
-- Full ETL pipeline
+- Full ETL pipeline 
+**AI claim parsing (Groq + Gemini fallback)**
 
 ## Stack
 
@@ -85,6 +86,7 @@ Full API reference: [docs/API.md](docs/API.md)
 | `/api/invoices/:id` | GET/PATCH/DELETE | Manage one invoice |
 | `/api/verify` | POST/GET | Verify invoice vs statement |
 | `/api/subscriptions/:statementId` | GET | Detect subscriptions |
+| `/api/parse-claim` | POST | Parse client claim (AI) |
 
 ## Roadmap
 
