@@ -34,6 +34,7 @@ app.use('/api', require('./routes/statements'));
 app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/verify', require('./routes/verify'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
+app.use('/api', require('./routes/claims'));
 
 // Connect to MongoDB
 mongoose
