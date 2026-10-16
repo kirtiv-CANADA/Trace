@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// POST /api/parse-statement — upload CSV, parse, save
+// POST /api/statements/parse-statement — upload CSV, parse, save
 router.post('/parse-statement', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -55,7 +55,7 @@ router.post('/parse-statement', upload.single('file'), async (req, res) => {
 });
 
 // GET /api/statements — list all
-router.get('/statements', async (req, res) => {
+router.get('/', async (req, res) => {
   const list = await Statement.find({}, 'filename bank uploadDate transactions').lean();
   res.json(
     list.map((s) => ({
