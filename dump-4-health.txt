@@ -1,7 +1,0 @@
-﻿{
-    "status":  "ok",
-    "service":  "trace",
-    "time":  "2026-10-16T09:14:06.840Z",
-    "uptime":  6263.93869,
-    "db":  "connected"
-}
