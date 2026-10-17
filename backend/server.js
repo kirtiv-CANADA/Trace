@@ -18,7 +18,7 @@ app.get('/', (req, res) => {
   res.json({ ok: true, service: 'Trace API' });
 });
 
-// Health — for Render + uptime monitors later
+// Health
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -29,13 +29,20 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Routes — each mounted on a distinct prefix to avoid collisions
-app.use('/api/statements', require('./routes/statements'));
+// ============================================
+// ROUTES
+// ============================================
+// These files have full paths inside (/parse-statement, /parse-claim) → mount on /api
+app.use('/api', require('./routes/statements'));
+app.use('/api', require('./routes/claims'));
+
+// This file has path "/" → mount on /api/claim-to-verdict
+app.use('/api/claim-to-verdict', require('./routes/claimToVerdict'));
+
+// These files have short paths (/, /:id) → mount on distinct prefixes
 app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/verify', require('./routes/verify'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
-app.use('/api/claims', require('./routes/claims'));
-app.use('/api/claim-to-verdict', require('./routes/claimToVerdict'));
 
 // Connect to MongoDB
 mongoose
