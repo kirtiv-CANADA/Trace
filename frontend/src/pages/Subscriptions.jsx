@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchStatements, fetchSubscriptions } from '../api';
+import { fetchStatements, fetchSubscriptions, downloadDisputePackage } from '../api';
 
 export default function Subscriptions() {
   const [statements, setStatements] = useState([]);
@@ -129,6 +129,21 @@ export default function Subscriptions() {
                   </div>
                 </details>
               )}
+
+              {/* Yahan naya button hai, charges ke details ke theek neeche */}
+              <button
+                onClick={async () => {
+                  try {
+                    await downloadDisputePackage(statementId, sub.merchant);
+                  } catch (e) {
+                    alert('Failed to download: ' + e.message);
+                  }
+                }}
+                className="mt-4 w-full bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-sm font-medium py-2 rounded transition-colors"
+              >
+                ⚖️ Download Dispute Package (PDF)
+              </button>
+
             </div>
           ))}
         </div>

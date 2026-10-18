@@ -44,6 +44,9 @@ app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/verify', require('./routes/verify'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
 
+// Dispute package route (NEW)
+app.use('/api/dispute-package', require('./routes/disputePackage'));
+
 // Connect to MongoDB
 mongoose
   .connect(process.env.MONGO_URI)

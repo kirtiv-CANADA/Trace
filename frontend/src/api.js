@@ -27,3 +27,25 @@ export async function fetchSubscriptions(statementId) {
   if (!res.ok) throw new Error(data.error || 'Failed to detect subscriptions');
   return data;
 }
+export async function downloadDisputePackage(statementId, merchant) {
+  const res = await fetch(`${API_BASE}/api/dispute-package`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ statementId, merchant }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to generate PDF');
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `dispute-${merchant.replace(/\s+/g, '-')}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
