@@ -17,3 +17,13 @@ export async function claimToVerdict(claimText, statementId) {
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
+
+// Yahan change kiya gaya hai: POST se GET kiya, aur ID URL path mein bheji
+export async function fetchSubscriptions(statementId) {
+  const res = await fetch(`${API_BASE}/api/subscriptions/${statementId}`, {
+    method: 'GET',
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to detect subscriptions');
+  return data;
+}
