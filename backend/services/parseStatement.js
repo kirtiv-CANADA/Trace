@@ -16,14 +16,13 @@ function detectBank(headers, sampleDate) {
     h.includes('credit') &&
     h.includes('balance')
   ) {
-    // RBC uses MM/DD/YYYY, TD uses YYYY-MM-DD
     if (sampleDate && /^\d{4}-\d{2}-\d{2}$/.test(String(sampleDate).trim())) {
       return 'TD';
     }
     if (sampleDate && /^\d{2}\/\d{2}\/\d{4}$/.test(String(sampleDate).trim())) {
       return 'RBC';
     }
-    return 'RBC'; // default fallback
+    return 'RBC';
   }
 
   return 'UNKNOWN';
@@ -68,6 +67,18 @@ function parseAmount(str) {
   return isNaN(n) ? 0 : n;
 }
 
+// NAYA FUNCTION: Personal transactions ko pehchanne ke liye
+function isPersonalTransaction(description) {
+  const desc = String(description || '').toUpperCase();
+  const personalKeywords = [
+    'SALARY', 'PAYROLL', 'ATM', 'WITHDRAWAL', 
+    'GROCERY', 'SUPERMARKET', 'WALMART', 'COSTCO',
+    'RESTAURANT', 'CAFE', 'UBER', 'LYFT', 'GAS',
+    'RENT', 'MORTGAGE', 'INSURANCE'
+  ];
+  return personalKeywords.some((kw) => desc.includes(kw));
+}
+
 /**
  * Main parser: CSV file path → structured statement data.
  */
@@ -83,17 +94,14 @@ async function parseStatement(filePath) {
   const rows = parsed.data;
   const headers = parsed.meta.fields || [];
 
-  // Handle empty CSV
   if (!rows || rows.length === 0) {
     throw new Error('CSV file is empty or has no data rows');
   }
 
-  // Detect bank + date format from the first row
   const firstDate = rows[0]?.Date || rows[0]?.date || '';
   const bank = detectBank(headers, firstDate);
   const dateFormat = detectDateFormat(firstDate) || 'MM/DD/YYYY';
 
-  // Normalize transactions
   const transactions = rows.map((row) => {
     const date = parseDate(row.Date || row.date, dateFormat);
     const description = (row.Description || row.description || '').trim();
@@ -116,7 +124,6 @@ async function parseStatement(filePath) {
     return { date, description, amount, balance, type, raw: row };
   });
 
-  // Compute statement period
   const dates = transactions
     .map((t) => t.date)
     .filter((d) => d instanceof Date && !isNaN(d))
@@ -142,4 +149,5 @@ module.exports = {
   detectDateFormat,
   parseDate,
   parseAmount,
+  isPersonalTransaction, // <-- Export kar diya
 };

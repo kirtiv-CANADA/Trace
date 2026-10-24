@@ -4,7 +4,8 @@ const path = require('path');
 const fs = require('fs');
 const router = express.Router();
 
-const { parseStatement } = require('../services/parseStatement');
+// Yahan import mein isPersonalTransaction add kiya hai
+const { parseStatement, isPersonalTransaction } = require('../services/parseStatement');
 const Statement = require('../models/Statement');
 
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
@@ -31,6 +32,17 @@ router.post('/parse-statement', upload.single('file'), async (req, res) => {
 
     const parsed = await parseStatement(req.file.path);
 
+    // PRIVACY FILTER: Personal transactions skip karo
+    const businessTransactions = parsed.transactions.filter(
+      (t) => !isPersonalTransaction(t.description)
+    );
+    const personalCount = parsed.transactions.length - businessTransactions.length;
+    
+    // Sirf business transactions save karo
+    parsed.transactions = businessTransactions;
+    parsed.totalTransactions = businessTransactions.length;
+
+    // Database mein save karo
     const doc = await Statement.create({
       filename: parsed.filename,
       bank: parsed.bank,
@@ -39,12 +51,15 @@ router.post('/parse-statement', upload.single('file'), async (req, res) => {
       transactions: parsed.transactions,
     });
 
+    // Response mein privacy filter ka result bhi bhejo
     return res.json({
       ok: true,
       statementId: doc._id,
       bank: parsed.bank,
       dateFormat: parsed.dateFormat,
       totalTransactions: parsed.totalTransactions,
+      personalTransactionsSkipped: personalCount, // Naya field
+      privacyMode: "Enabled",                     // Naya field
       periodStart: parsed.periodStart,
       periodEnd: parsed.periodEnd,
     });
