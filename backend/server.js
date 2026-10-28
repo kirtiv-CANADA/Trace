@@ -1,4 +1,8 @@
-﻿require('dotenv').config();
+﻿// Force env loading from Render Dashboard in production
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
+
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -7,6 +11,7 @@ const mongoose = require('mongoose');
 require('./models/Statement');
 require('./models/Invoice');
 require('./models/Verification');
+require('./models/WebhookEvent');
 
 const app = express();
 
@@ -32,6 +37,11 @@ app.get('/api/health', (req, res) => {
 // ============================================
 // ROUTES
 // ============================================
+// NEW (Trap Scan + PayPal) — mounted first, on their own prefixes
+app.use('/api/trap-scan', require('./routes/trapScan'));
+app.use('/api/paypal/invoices', require('./routes/paypalInvoices'));
+app.use('/api/webhooks', require('./routes/webhooks'));
+
 // These files have full paths inside (/parse-statement, /parse-claim) → mount on /api
 app.use('/api', require('./routes/statements'));
 app.use('/api', require('./routes/claims'));
@@ -44,7 +54,7 @@ app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/verify', require('./routes/verify'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
 
-// Dispute package route (NEW)
+// Dispute package route
 app.use('/api/dispute-package', require('./routes/disputePackage'));
 
 // Connect to MongoDB

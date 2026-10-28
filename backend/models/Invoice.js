@@ -14,6 +14,12 @@ const invoiceSchema = new mongoose.Schema({
     default: 'draft',
   },
   notes: String,
+
+  // --- PayPal (added) ---
+  paypalInvoiceId: { type: String, index: true },
+  paypalStatus: String,
+  paypalUrl: String,
+  paidAt: Date,
 }, { timestamps: true });
 
 module.exports = mongoose.model('Invoice', invoiceSchema);

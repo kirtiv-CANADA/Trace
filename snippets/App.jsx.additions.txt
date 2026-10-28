@@ -1,0 +1,9 @@
+In frontend/src/App.jsx:
+
+1) with the other imports:
+   import TrapScan from './pages/TrapScan';
+
+2) with the other <Route ...> lines:
+   <Route path="/traps" element={<TrapScan />} />
+
+3) in the navbar, copy the style of your "Subscriptions" link and add one more link to "/traps" with the text "Trap Scan".

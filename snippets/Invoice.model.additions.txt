@@ -1,0 +1,8 @@
+In backend/models/Invoice.js add these fields inside the schema (next to clientName, amount, ...):
+
+  paypalInvoiceId: { type: String, index: true },
+  paypalStatus: String,
+  paypalUrl: String,
+  paidAt: Date,
+
+Also make sure the schema has a "description" field (String) and that "status" allows: draft, sent, paid.

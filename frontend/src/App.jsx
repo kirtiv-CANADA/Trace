@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import VerifyClaim from './pages/VerifyClaim';
 import Home from './pages/Home';
 import Subscriptions from './pages/Subscriptions';
+import TrapScan from './pages/TrapScan';
 
 function Navbar() {
   const location = useLocation();
@@ -21,6 +22,7 @@ function Navbar() {
         <Link to="/" className={linkClass('/')}>Home</Link>
         <Link to="/verify" className={linkClass('/verify')}>Verify Claim</Link>
         <Link to="/subscriptions" className={linkClass('/subscriptions')}>Subscriptions</Link>
+        <Link to="/traps" className={linkClass('/traps')}>Trap Scan</Link>
       </div>
     </nav>
   );
@@ -35,6 +37,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/verify" element={<VerifyClaim />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
+          <Route path="/traps" element={<TrapScan />} />
         </Routes>
       </div>
     </BrowserRouter>
