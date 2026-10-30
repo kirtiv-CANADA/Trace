@@ -1,8 +1,9 @@
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+﻿import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import VerifyClaim from './pages/VerifyClaim';
 import Home from './pages/Home';
 import Subscriptions from './pages/Subscriptions';
 import TrapScan from './pages/TrapScan';
+import Invoices from './pages/Invoices';
 
 function Navbar() {
   const location = useLocation();
@@ -23,6 +24,7 @@ function Navbar() {
         <Link to="/verify" className={linkClass('/verify')}>Verify Claim</Link>
         <Link to="/subscriptions" className={linkClass('/subscriptions')}>Subscriptions</Link>
         <Link to="/traps" className={linkClass('/traps')}>Trap Scan</Link>
+          <Link to="/invoices" className={linkClass('/invoices')}>Invoices</Link>
       </div>
     </nav>
   );
@@ -38,8 +40,10 @@ export default function App() {
           <Route path="/verify" element={<VerifyClaim />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
           <Route path="/traps" element={<TrapScan />} />
+            <Route path="/invoices" element={<Invoices />} />
         </Routes>
       </div>
     </BrowserRouter>
   );
 }
+
