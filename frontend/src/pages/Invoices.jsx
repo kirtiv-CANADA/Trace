@@ -120,19 +120,50 @@ export default function Invoices() {
     }
   };
 
+  // Keep status calculation in one place for all dashboard sections.
+  function getStatus(item) {
+    const status = String(
+      item.displayStatus || item.status || 'draft'
+    ).toLowerCase();
+
+    if (status === 'paid') return 'paid';
+    if (status === 'disputed') return 'disputed';
+    if (status === 'overdue') return 'overdue';
+
+    if (
+      item.dueDate &&
+      new Date(item.dueDate) < new Date() &&
+      status !== 'paid'
+    ) {
+      return 'overdue';
+    }
+
+    return status;
+  }
+
   const currencySummary = useMemo(() => {
     const summary = {};
 
     invoices.forEach((item) => {
       const currency = item.currency || 'USD';
       const amount = Number(item.amount) || 0;
+      const status = getStatus(item);
 
       if (!summary[currency]) {
-        summary[currency] = { received: 0, pending: 0 };
+        summary[currency] = {
+          received: 0,
+          pending: 0,
+          overdue: 0,
+          disputed: 0,
+        };
       }
 
-      if (item.status === 'paid') {
+      if (status === 'paid') {
         summary[currency].received += amount;
+      } else if (status === 'disputed') {
+        summary[currency].disputed += amount;
+      } else if (status === 'overdue') {
+        summary[currency].overdue += amount;
       } else {
         summary[currency].pending += amount;
       }
@@ -146,47 +177,47 @@ export default function Invoices() {
 
     invoices.forEach((item) => {
       const currency = item.currency || 'USD';
-      const name = item.clientName || 'Unknown client';
-      const email = item.clientEmail || '';
-      const key = `${name.toLowerCase()}|${email.toLowerCase()}|${currency}`;
+      const name = (item.clientName || 'Unknown client').trim();
+      const email = (item.clientEmail || '').trim();
+      const key = `${name.toLowerCase()}|${currency}`;
 
       if (!summary[key]) {
         summary[key] = {
           name,
-          email,
+          emails: new Set(),
           currency,
           received: 0,
           pending: 0,
+          overdue: 0,
+          disputed: 0,
         };
       }
 
-      const amount = Number(item.amount) || 0;
+      if (email) {
+        summary[key].emails.add(email);
+      }
 
-      if (item.status === 'paid') {
+      const amount = Number(item.amount) || 0;
+      const status = getStatus(item);
+
+      if (status === 'paid') {
         summary[key].received += amount;
+      } else if (status === 'disputed') {
+        summary[key].disputed += amount;
+      } else if (status === 'overdue') {
+        summary[key].overdue += amount;
       } else {
         summary[key].pending += amount;
       }
     });
 
-    return Object.values(summary).sort((a, b) =>
-      a.name.localeCompare(b.name)
-    );
+    return Object.values(summary)
+      .map((client) => ({
+        ...client,
+        emails: Array.from(client.emails).sort(),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [invoices]);
-
-  const getStatus = (item) => {
-    if (item.displayStatus) return item.displayStatus;
-
-    if (
-      item.status !== 'paid' &&
-      item.dueDate &&
-      new Date(item.dueDate) < new Date()
-    ) {
-      return 'overdue';
-    }
-
-    return item.status || 'draft';
-  };
 
   const statusClass = (status) => {
     const styles = {
@@ -244,7 +275,7 @@ export default function Invoices() {
             No invoices yet. Create your first invoice below.
           </p>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {Object.entries(currencySummary).map(([currency, totals]) => (
               <div
                 key={currency}
@@ -253,13 +284,25 @@ export default function Invoices() {
                 <h3 className="mb-4 font-semibold text-gray-900">
                   {currency}
                 </h3>
+
                 <p className="text-sm text-gray-500">Total Received</p>
                 <p className="mb-3 text-2xl font-bold text-green-700">
                   {formatAmount(currency, totals.received)}
                 </p>
+
                 <p className="text-sm text-gray-500">Total Pending</p>
-                <p className="text-2xl font-bold text-orange-700">
+                <p className="mb-3 text-2xl font-bold text-orange-700">
                   {formatAmount(currency, totals.pending)}
+                </p>
+
+                <p className="text-sm text-gray-500">Total Overdue</p>
+                <p className="mb-3 text-2xl font-bold text-red-700">
+                  {formatAmount(currency, totals.overdue)}
+                </p>
+
+                <p className="text-sm text-gray-500">Total Disputed</p>
+                <p className="text-2xl font-bold text-purple-700">
+                  {formatAmount(currency, totals.disputed)}
                 </p>
               </div>
             ))}
@@ -272,7 +315,7 @@ export default function Invoices() {
           <div>
             <h2 className="text-xl font-bold text-gray-900">All Invoices</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Paid, pending and overdue payment records.
+              Paid, pending, overdue and disputed payment records.
             </p>
           </div>
 
@@ -319,14 +362,17 @@ export default function Invoices() {
                           {item.clientEmail}
                         </p>
                       </td>
+
                       <td className="px-3 py-3 font-semibold text-gray-900">
                         {formatAmount(item.currency || 'USD', item.amount)}
                       </td>
+
                       <td className="px-3 py-3 text-gray-600">
                         {item.dueDate
                           ? new Date(item.dueDate).toLocaleDateString()
                           : '—'}
                       </td>
+
                       <td className="px-3 py-3">
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusClass(status)}`}
@@ -334,11 +380,13 @@ export default function Invoices() {
                           {status}
                         </span>
                       </td>
+
                       <td className="px-3 py-3 text-gray-600">
                         {item.paypalStatus || '—'}
                       </td>
+
                       <td className="px-3 py-3">
-                        {item.paypalInvoiceId && item.status !== 'paid' && (
+                        {item.paypalInvoiceId && status !== 'paid' && (
                           <button
                             type="button"
                             onClick={() => handleSyncOne(item._id)}
@@ -348,6 +396,7 @@ export default function Invoices() {
                             {syncingOne === item._id ? 'Checking...' : 'Refresh'}
                           </button>
                         )}
+
                         {item.paypalUrl && (
                           <a
                             href={item.paypalUrl}
@@ -379,33 +428,49 @@ export default function Invoices() {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] text-left text-sm">
+            <table className="w-full min-w-[900px] text-left text-sm">
               <thead>
                 <tr className="border-b border-gray-200 text-gray-500">
                   <th className="px-3 py-3">Client</th>
                   <th className="px-3 py-3">Currency</th>
                   <th className="px-3 py-3">Received</th>
                   <th className="px-3 py-3">Pending</th>
+                  <th className="px-3 py-3">Overdue</th>
+                  <th className="px-3 py-3">Disputed</th>
                 </tr>
               </thead>
+
               <tbody>
                 {clientSummary.map((client) => (
                   <tr
-                    key={`${client.name}-${client.email}-${client.currency}`}
+                    key={`${client.name}-${client.currency}`}
                     className="border-b border-gray-100"
                   >
                     <td className="px-3 py-3">
                       <p className="font-semibold text-gray-900">
                         {client.name}
                       </p>
-                      <p className="text-xs text-gray-500">{client.email}</p>
+                      <p className="text-xs text-gray-500">
+                        {client.emails.join(', ') || '—'}
+                      </p>
                     </td>
+
                     <td className="px-3 py-3">{client.currency}</td>
+
                     <td className="px-3 py-3 font-semibold text-green-700">
                       {formatAmount(client.currency, client.received)}
                     </td>
+
                     <td className="px-3 py-3 font-semibold text-orange-700">
                       {formatAmount(client.currency, client.pending)}
+                    </td>
+
+                    <td className="px-3 py-3 font-semibold text-red-700">
+                      {formatAmount(client.currency, client.overdue)}
+                    </td>
+
+                    <td className="px-3 py-3 font-semibold text-purple-700">
+                      {formatAmount(client.currency, client.disputed)}
                     </td>
                   </tr>
                 ))}
@@ -589,7 +654,7 @@ export default function Invoices() {
                 </a>
               )}
 
-              {invoice._id && invoice.status !== 'paid' && (
+              {invoice._id && getStatus(invoice) !== 'paid' && (
                 <button
                   type="button"
                   onClick={() => handleSyncOne(invoice._id)}
