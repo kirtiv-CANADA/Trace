@@ -1,5 +1,11 @@
-﻿import { useState } from 'react';
-import { createPayPalInvoice, syncPayPalInvoice } from '../api';
+﻿
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  createPayPalInvoice,
+  syncPayPalInvoice,
+  fetchPayPalInvoices,
+  syncAllPendingInvoices,
+} from '../api';
 
 export default function Invoices() {
   const [form, setForm] = useState({
@@ -12,9 +18,29 @@ export default function Invoices() {
   });
 
   const [invoice, setInvoice] = useState(null);
+  const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingList, setLoadingList] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncingOne, setSyncingOne] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const loadInvoices = useCallback(async () => {
+    setLoadingList(true);
+    try {
+      const result = await fetchPayPalInvoices();
+      setInvoices(result.invoices || []);
+    } catch (err) {
+      setError(err.message || 'Could not load invoices.');
+    } finally {
+      setLoadingList(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInvoices();
+  }, [loadInvoices]);
 
   const updateField = (event) => {
     setForm({ ...form, [event.target.name]: event.target.value });
@@ -24,6 +50,7 @@ export default function Invoices() {
     event.preventDefault();
     setLoading(true);
     setError('');
+    setNotice('');
     setInvoice(null);
 
     try {
@@ -31,45 +58,362 @@ export default function Invoices() {
         ...form,
         amount: Number(form.amount),
       });
-      setInvoice(result.invoice || result);
+
+      const created = result.invoice || result;
+      setInvoice(created);
+      setNotice('Invoice created successfully.');
+      await loadInvoices();
     } catch (err) {
-      setError(err.message || 'Invoice creation failed. Please try again.');
+      setError(err.message || 'Invoice creation failed.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSync = async () => {
-    if (!invoice?._id) return;
-    setSyncing(true);
+  const handleSyncOne = async (id) => {
+    if (!id) return;
+
+    setSyncingOne(id);
     setError('');
+    setNotice('');
 
     try {
-      const result = await syncPayPalInvoice(invoice._id);
-      setInvoice(result.invoice || result);
+      const result = await syncPayPalInvoice(id);
+      const updated = result.invoice || result;
+
+      setInvoice((current) =>
+        current?._id === id ? updated : current
+      );
+
+      await loadInvoices();
+      setNotice('Invoice status refreshed from PayPal.');
     } catch (err) {
       setError(err.message || 'Could not sync invoice status.');
+    } finally {
+      setSyncingOne('');
+    }
+  };
+
+  const handleSyncAll = async () => {
+    setSyncing(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const result = await syncAllPendingInvoices();
+      setInvoices(result.invoices || []);
+
+      setNotice(
+        `Refresh complete: ${result.synced || 0} synced, ${result.failed || 0} failed.`
+      );
+
+      if (result.failed > 0) {
+        setError(
+          result.errors?.map((item) => item.error).filter(Boolean).join('; ') ||
+          'Some invoices could not be refreshed.'
+        );
+      }
+    } catch (err) {
+      setError(err.message || 'Could not refresh pending invoices.');
     } finally {
       setSyncing(false);
     }
   };
 
+  const currencySummary = useMemo(() => {
+    const summary = {};
+
+    invoices.forEach((item) => {
+      const currency = item.currency || 'USD';
+      const amount = Number(item.amount) || 0;
+
+      if (!summary[currency]) {
+        summary[currency] = { received: 0, pending: 0 };
+      }
+
+      if (item.status === 'paid') {
+        summary[currency].received += amount;
+      } else {
+        summary[currency].pending += amount;
+      }
+    });
+
+    return summary;
+  }, [invoices]);
+
+  const clientSummary = useMemo(() => {
+    const summary = {};
+
+    invoices.forEach((item) => {
+      const currency = item.currency || 'USD';
+      const name = item.clientName || 'Unknown client';
+      const email = item.clientEmail || '';
+      const key = `${name.toLowerCase()}|${email.toLowerCase()}|${currency}`;
+
+      if (!summary[key]) {
+        summary[key] = {
+          name,
+          email,
+          currency,
+          received: 0,
+          pending: 0,
+        };
+      }
+
+      const amount = Number(item.amount) || 0;
+
+      if (item.status === 'paid') {
+        summary[key].received += amount;
+      } else {
+        summary[key].pending += amount;
+      }
+    });
+
+    return Object.values(summary).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [invoices]);
+
+  const getStatus = (item) => {
+    if (item.displayStatus) return item.displayStatus;
+
+    if (
+      item.status !== 'paid' &&
+      item.dueDate &&
+      new Date(item.dueDate) < new Date()
+    ) {
+      return 'overdue';
+    }
+
+    return item.status || 'draft';
+  };
+
+  const statusClass = (status) => {
+    const styles = {
+      paid: 'bg-green-100 text-green-800',
+      sent: 'bg-blue-100 text-blue-800',
+      draft: 'bg-gray-100 text-gray-700',
+      overdue: 'bg-red-100 text-red-800',
+      disputed: 'bg-orange-100 text-orange-800',
+    };
+
+    return styles[status] || 'bg-gray-100 text-gray-700';
+  };
+
+  const formatAmount = (currency, amount) =>
+    `${currency} ${Number(amount || 0).toFixed(2)}`;
+
   const inputClass =
     'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100';
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-10">
+    <main className="mx-auto max-w-7xl px-4 py-10">
       <div className="mb-8">
         <p className="text-sm font-semibold uppercase tracking-wider text-blue-600">
           Trace Payments
         </p>
         <h1 className="mt-2 text-3xl font-bold text-gray-900">
-          Create an Invoice
+          Payment Dashboard
         </h1>
         <p className="mt-2 text-gray-600">
-          Generate a PayPal Sandbox invoice and track its status.
+          Create invoices, track payments and monitor pending amounts.
         </p>
       </div>
+
+      {error && (
+        <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {notice && (
+        <div className="mb-5 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          {notice}
+        </div>
+      )}
+
+      <section className="mb-8">
+        <h2 className="mb-4 text-xl font-bold text-gray-900">
+          Payment Summary
+        </h2>
+
+        {loadingList ? (
+          <p className="text-gray-500">Loading payment summary...</p>
+        ) : Object.keys(currencySummary).length === 0 ? (
+          <p className="rounded-xl border border-gray-200 bg-white p-5 text-gray-500">
+            No invoices yet. Create your first invoice below.
+          </p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Object.entries(currencySummary).map(([currency, totals]) => (
+              <div
+                key={currency}
+                className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+              >
+                <h3 className="mb-4 font-semibold text-gray-900">
+                  {currency}
+                </h3>
+                <p className="text-sm text-gray-500">Total Received</p>
+                <p className="mb-3 text-2xl font-bold text-green-700">
+                  {formatAmount(currency, totals.received)}
+                </p>
+                <p className="text-sm text-gray-500">Total Pending</p>
+                <p className="text-2xl font-bold text-orange-700">
+                  {formatAmount(currency, totals.pending)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mb-8 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">All Invoices</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Paid, pending and overdue payment records.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSyncAll}
+            disabled={syncing || loadingList}
+            className="rounded-lg bg-blue-600 px-4 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+          >
+            {syncing ? 'Refreshing...' : 'Refresh from PayPal'}
+          </button>
+        </div>
+
+        {loadingList ? (
+          <p className="py-5 text-gray-500">Loading invoices...</p>
+        ) : invoices.length === 0 ? (
+          <p className="rounded-lg bg-gray-50 p-5 text-sm text-gray-500">
+            No invoices found.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[750px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-gray-500">
+                  <th className="px-3 py-3">Client</th>
+                  <th className="px-3 py-3">Amount</th>
+                  <th className="px-3 py-3">Due date</th>
+                  <th className="px-3 py-3">Status</th>
+                  <th className="px-3 py-3">PayPal</th>
+                  <th className="px-3 py-3">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((item) => {
+                  const status = getStatus(item);
+
+                  return (
+                    <tr key={item._id} className="border-b border-gray-100">
+                      <td className="px-3 py-3">
+                        <p className="font-semibold text-gray-900">
+                          {item.clientName}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {item.clientEmail}
+                        </p>
+                      </td>
+                      <td className="px-3 py-3 font-semibold text-gray-900">
+                        {formatAmount(item.currency || 'USD', item.amount)}
+                      </td>
+                      <td className="px-3 py-3 text-gray-600">
+                        {item.dueDate
+                          ? new Date(item.dueDate).toLocaleDateString()
+                          : '—'}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusClass(status)}`}
+                        >
+                          {status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-gray-600">
+                        {item.paypalStatus || '—'}
+                      </td>
+                      <td className="px-3 py-3">
+                        {item.paypalInvoiceId && item.status !== 'paid' && (
+                          <button
+                            type="button"
+                            onClick={() => handleSyncOne(item._id)}
+                            disabled={syncingOne === item._id}
+                            className="font-semibold text-blue-700 hover:underline disabled:opacity-50"
+                          >
+                            {syncingOne === item._id ? 'Checking...' : 'Refresh'}
+                          </button>
+                        )}
+                        {item.paypalUrl && (
+                          <a
+                            href={item.paypalUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="ml-3 font-semibold text-gray-700 hover:underline"
+                          >
+                            Open
+                          </a>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="mb-8 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-4 text-xl font-bold text-gray-900">
+          Client-wise Summary
+        </h2>
+
+        {clientSummary.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            Client summaries will appear when invoices are created.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-gray-500">
+                  <th className="px-3 py-3">Client</th>
+                  <th className="px-3 py-3">Currency</th>
+                  <th className="px-3 py-3">Received</th>
+                  <th className="px-3 py-3">Pending</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientSummary.map((client) => (
+                  <tr
+                    key={`${client.name}-${client.email}-${client.currency}`}
+                    className="border-b border-gray-100"
+                  >
+                    <td className="px-3 py-3">
+                      <p className="font-semibold text-gray-900">
+                        {client.name}
+                      </p>
+                      <p className="text-xs text-gray-500">{client.email}</p>
+                    </td>
+                    <td className="px-3 py-3">{client.currency}</td>
+                    <td className="px-3 py-3 font-semibold text-green-700">
+                      {formatAmount(client.currency, client.received)}
+                    </td>
+                    <td className="px-3 py-3 font-semibold text-orange-700">
+                      {formatAmount(client.currency, client.pending)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <div className="grid gap-6 md:grid-cols-2">
         <form
@@ -77,7 +421,7 @@ export default function Invoices() {
           className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
         >
           <h2 className="mb-5 text-lg font-semibold text-gray-900">
-            Invoice details
+            Create an Invoice
           </h2>
 
           <div className="space-y-4">
@@ -189,16 +533,14 @@ export default function Invoices() {
 
         <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="mb-5 text-lg font-semibold text-gray-900">
-            Invoice status
+            Latest Invoice
           </h2>
 
-          {!invoice && (
+          {!invoice ? (
             <div className="rounded-lg bg-gray-50 p-5 text-sm text-gray-500">
-              Your generated invoice details will appear here.
+              Newly generated invoice details will appear here.
             </div>
-          )}
-
-          {invoice && (
+          ) : (
             <div className="space-y-4">
               <div>
                 <p className="text-sm text-gray-500">Client</p>
@@ -213,8 +555,10 @@ export default function Invoices() {
               <div>
                 <p className="text-sm text-gray-500">Amount</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {invoice.currency || form.currency}{' '}
-                  {Number(invoice.amount ?? form.amount).toFixed(2)}
+                  {formatAmount(
+                    invoice.currency || form.currency,
+                    invoice.amount ?? form.amount
+                  )}
                 </p>
               </div>
 
@@ -245,20 +589,18 @@ export default function Invoices() {
                 </a>
               )}
 
-              <button
-                type="button"
-                onClick={handleSync}
-                disabled={syncing || !invoice._id}
-                className="w-full rounded-lg bg-gray-900 px-4 py-3 font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
-              >
-                {syncing ? 'Checking status...' : 'Refresh payment status'}
-              </button>
-            </div>
-          )}
-
-          {error && (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {error}
+              {invoice._id && invoice.status !== 'paid' && (
+                <button
+                  type="button"
+                  onClick={() => handleSyncOne(invoice._id)}
+                  disabled={syncingOne === invoice._id}
+                  className="w-full rounded-lg bg-gray-900 px-4 py-3 font-semibold text-white hover:bg-gray-800 disabled:opacity-60"
+                >
+                  {syncingOne === invoice._id
+                    ? 'Checking status...'
+                    : 'Refresh payment status'}
+                </button>
+              )}
             </div>
           )}
         </section>

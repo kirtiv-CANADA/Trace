@@ -78,7 +78,33 @@ export async function createPayPalInvoice(data) {
   if (!res.ok) throw new Error(body.error || 'Could not create invoice');
   return body;
 }
+// Fetch all PayPal invoices from Trace database
+export async function fetchPayPalInvoices() {
+  const res = await fetch(`${API_BASE}/api/paypal/invoices`);
+  const body = await res.json().catch(() => ({}));
 
+  if (!res.ok) {
+    throw new Error(body.error || 'Could not load invoices');
+  }
+
+  return body;
+}
+
+// Refresh all pending PayPal invoices
+export async function syncAllPendingInvoices() {
+  const res = await fetch(
+    `${API_BASE}/api/paypal/invoices/sync-pending`,
+    { method: 'POST' }
+  );
+
+  const body = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(body.error || 'Could not refresh pending invoices');
+  }
+
+  return body;
+}
 export async function syncPayPalInvoice(id) {
   const res = await fetch(`${API_BASE}/api/paypal/invoices/${id}/sync`);
   const body = await res.json().catch(() => ({}));
