@@ -1,5 +1,5 @@
 // frontend/src/api.js
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+const API_BASE = 'https://trace-bf22.onrender.com';
 
 export async function fetchStatements() {
   const res = await fetch(`${API_BASE}/api/statements`);
