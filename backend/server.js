@@ -36,6 +36,9 @@ app.get('/api/health', (req, res) => {
 
 // ============================================
 // ROUTES
+// Auth route
+app.use('/api/auth', require('./routes/auth'));
+
 // ============================================
 // NEW (Trap Scan + PayPal) — mounted first, on their own prefixes
 app.use('/api/trap-scan', require('./routes/trapScan'));

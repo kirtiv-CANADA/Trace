@@ -53,20 +53,47 @@ async function claimToVerdict(claimText, statementId, options = {}) {
     };
   }
 
-  // ---- Step 3: Create an Invoice from the claim ----
-  const invoice = await Invoice.create({
+  // ---- Step 3: Check for existing duplicate invoice before creating new ----
+  let invoice = null;
+  
+  // Look for an existing invoice with same client, amount, and (if available) reference
+  const query = {
     clientName: parsed.clientName,
     amount: parsed.amount,
-    currency: parsed.currency || 'CAD',
-    issueDate: parsed.paidDate ? new Date(parsed.paidDate) : new Date(),
-    reference: parsed.reference || null,
-    status: 'sent',
-    notes: `Auto-created from claim: "${claimText.slice(0, 200)}"`,
-    clientClaimsPaid: true,
-    claimText: claimText,
-    sourceProvider: parsed.raw.provider,
-    sourceModel: parsed.raw.model,
-  });
+  };
+  
+  // If reference is present, use it to narrow search
+  if (parsed.reference) {
+    query.reference = parsed.reference;
+  }
+  
+  const existing = await Invoice.findOne(query);
+  
+  if (existing) {
+    // Use existing invoice instead of creating duplicate
+    invoice = existing;
+    // Update it to reflect latest claim data
+    invoice.issueDate = parsed.paidDate ? new Date(parsed.paidDate) : invoice.issueDate;
+    invoice.clientClaimsPaid = true;
+    invoice.claimText = claimText;
+    invoice.status = 'sent';
+    await invoice.save();
+  } else {
+    // Create new invoice only if none exists
+    invoice = await Invoice.create({
+      clientName: parsed.clientName,
+      amount: parsed.amount,
+      currency: parsed.currency || 'CAD',
+      issueDate: parsed.paidDate ? new Date(parsed.paidDate) : new Date(),
+      reference: parsed.reference || null,
+      status: 'sent',
+      notes: `Auto-created from claim: "${claimText.slice(0, 200)}"`,
+      clientClaimsPaid: true,
+      claimText: claimText,
+      sourceProvider: parsed.raw.provider,
+      sourceModel: parsed.raw.model,
+    });
+  }
 
   // ---- Step 4: Match against statement ----
   const match = await matchInvoice(invoice, statementId);

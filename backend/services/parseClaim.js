@@ -18,7 +18,7 @@ function getGeminiClient() {
   return geminiClient;
 }
 
-// ---------- The extraction prompt (shared by both providers) ----------
+// ---------- The extraction prompt ----------
 function buildPrompt(claimText) {
   const today = new Date().toISOString().slice(0, 10);
   const currentYear = today.slice(0, 4);
@@ -88,27 +88,18 @@ Return ONLY the JSON object.`;
 }
 
 // ---------- Currency normalization helper ----------
-// Normalizes currency hints found directly in the claim text.
-// This runs as a safety net when the AI mislabels or misses currency.
 function inferCurrencyFromText(claimText) {
   if (!claimText) return null;
   const t = String(claimText);
-
-  // Indian rupee signals
   if (/[₹]|\bRs\.?\b|\bINR\b|\brupees?\b|\blakhs?\b|\bcrores?\b/i.test(t)) return 'INR';
-  // Euro
   if (/[€]|\bEUR\b|\beuros?\b/i.test(t)) return 'EUR';
-  // Pound
   if (/[£]|\bGBP\b|\bpounds?\b/i.test(t)) return 'GBP';
-  // US dollar
   if (/\bUSD\b|\bUS\$|\bUS\s*dollars?\b/i.test(t)) return 'USD';
-  // Canadian dollar (explicit)
   if (/\bCAD\b|\bC\$/i.test(t)) return 'CAD';
-
   return null;
 }
 
-// ---------- Groq (OpenAI-compatible API) ----------
+// ---------- Groq ----------
 const GROQ_MODEL = 'openai/gpt-oss-120b';
 
 async function parseWithGroq(claimText) {
@@ -174,7 +165,7 @@ async function parseWithGemini(claimText) {
   throw new Error(`All Gemini models failed: ${lastError?.message || 'unknown'}`);
 }
 
-// ---------- Main parser (tries Groq → Gemini) ----------
+// ---------- Main parser ----------
 async function parseClaim(claimText) {
   if (!claimText || typeof claimText !== 'string' || claimText.trim().length < 3) {
     throw new Error('Claim text is too short or empty');
@@ -183,7 +174,6 @@ async function parseClaim(claimText) {
   let result = null;
   let errors = [];
 
-  // 1. Groq first
   try {
     result = await parseWithGroq(claimText);
     console.log(`[parseClaim] Used Groq (${result.model})`);
@@ -192,7 +182,6 @@ async function parseClaim(claimText) {
     errors.push(`groq: ${err.message.slice(0, 80)}`);
   }
 
-  // 2. Gemini fallback
   if (!result) {
     try {
       result = await parseWithGemini(claimText);
@@ -207,7 +196,6 @@ async function parseClaim(claimText) {
     throw new Error(`All LLM providers failed → ${errors.join(' | ')}`);
   }
 
-  // ---------- Parse JSON ----------
   let parsed;
   try {
     parsed = JSON.parse(result.rawText);
@@ -219,34 +207,58 @@ async function parseClaim(claimText) {
     parsed = JSON.parse(match[0]);
   }
 
-  // ---------- Normalize + post-processing ----------
   const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.slice() : [];
 
-  // Currency post-processing: override with text-derived currency if AI missed it
+  // --- NEW VALIDATION: Amount must be a positive finite number ---
+  let finalAmount = null;
+  if (typeof parsed.amount === 'number' && Number.isFinite(parsed.amount) && parsed.amount > 0) {
+    finalAmount = parsed.amount;
+  } else if (parsed.amount != null) {
+    warnings.push('amount_invalid');
+  }
+
+  // --- NEW VALIDATION: Date must not be in the future ---
+  let finalPaidDate = parsed.paidDate || parsed.date || null;
+  if (finalPaidDate) {
+    const d = new Date(finalPaidDate);
+    if (isNaN(d.getTime())) {
+      warnings.push('date_invalid');
+      finalPaidDate = null;
+    } else if (d > new Date()) {
+      // If it's a future date but claimsPaid is true, it's suspicious. 
+      // Still allow it but add a warning.
+      warnings.push('date_in_future');
+    }
+  }
+
+  // --- NEW VALIDATION: Confidence must be between 0 and 1 ---
+  let finalConfidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.5;
+  if (finalConfidence < 0) finalConfidence = 0;
+  if (finalConfidence > 1) finalConfidence = 1;
+
+  // --- CURRENCY: combine AI + text ---
   const textCurrency = inferCurrencyFromText(claimText);
   let finalCurrency = parsed.currency || null;
-
   if (!finalCurrency && textCurrency) {
     finalCurrency = textCurrency;
     warnings.push('currency_inferred');
   } else if (finalCurrency && textCurrency && finalCurrency !== textCurrency) {
-    // AI said X, but text says Y — trust the text (it's what the client literally wrote)
     warnings.push('currency_overridden');
     finalCurrency = textCurrency;
   }
 
-  if (parsed.amount == null) warnings.push('amount_missing');
+  if (finalAmount == null) warnings.push('amount_missing');
   if (!parsed.clientName && !parsed.payer) warnings.push('clientName_missing');
 
   return {
     clientName: parsed.clientName || parsed.payer || null,
-    amount: typeof parsed.amount === 'number' ? parsed.amount : null,
+    amount: finalAmount,
     currency: finalCurrency,
-    paidDate: parsed.paidDate || parsed.date || null,
+    paidDate: finalPaidDate,
     reference: parsed.reference || null,
     paymentMethod: parsed.paymentMethod || null,
     claimsPaid: parsed.claimsPaid === true ? true : parsed.claimsPaid === false ? false : null,
-    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+    confidence: finalConfidence,
     warnings: [...new Set(warnings)],
     raw: {
       claimText,

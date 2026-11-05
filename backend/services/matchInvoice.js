@@ -65,12 +65,6 @@ function dateInWindow(txnDate, anchorDate) {
 
 // ---- Main matcher ----
 
-/**
- * Matches an invoice against a statement.
- * @param {Object} invoice   - Mongoose Invoice document (or plain object)
- * @param {String} statementId - Statement _id
- * @returns {Object} verdict + evidence
- */
 async function matchInvoice(invoice, statementId) {
   const statement = await Statement.findById(statementId).lean();
   if (!statement) {
@@ -98,13 +92,11 @@ async function matchInvoice(invoice, statementId) {
     const nameOk = nameScore(invoice.clientName, t.description);
     const dateOk = dateInWindow(t.date, issueDate);
 
-    // Weighted score
     const score = (amtOk ? 0.5 : 0) + nameOk * 0.3 + (dateOk ? 0.2 : 0);
 
     return { txn: t, amtOk, nameOk, dateOk, score };
   });
 
-  // Sort by score, best first
   scored.sort((a, b) => b.score - a.score);
 
   const searchWindow = issueDate
@@ -114,7 +106,6 @@ async function matchInvoice(invoice, statementId) {
       }
     : null;
 
-  // Case: no credits at all
   if (scored.length === 0) {
     return {
       verdict: 'NOT_FOUND',
@@ -128,7 +119,6 @@ async function matchInvoice(invoice, statementId) {
     };
   }
 
-  // Case: duplicates — two txns with same amount + same-ish name
   const strong = scored.filter((s) => s.amtOk && s.nameOk >= MIN_NAME_OVERLAP);
   if (strong.length > 1) {
     return {
@@ -143,7 +133,6 @@ async function matchInvoice(invoice, statementId) {
     };
   }
 
-  // Case: exactly one strong match → VERIFIED
   if (strong.length === 1) {
     return {
       verdict: 'VERIFIED',
@@ -157,7 +146,6 @@ async function matchInvoice(invoice, statementId) {
     };
   }
 
-  // Case: amount matched but name weak → PARTIAL
   const partial = scored.filter((s) => s.amtOk && s.nameOk < MIN_NAME_OVERLAP);
   if (partial.length > 0 && partial[0].dateOk) {
     return {
@@ -172,7 +160,6 @@ async function matchInvoice(invoice, statementId) {
     };
   }
 
-  // Case: name matched but amount off → AMBIGUOUS
   const ambiguous = scored.filter((s) => s.nameOk >= MIN_NAME_OVERLAP && !s.amtOk);
   if (ambiguous.length > 0) {
     return {
@@ -187,34 +174,49 @@ async function matchInvoice(invoice, statementId) {
     };
   }
 
-  // Case: nothing matched → NOT_FOUND (but return closest for evidence)
+  // ---- FIX: Correctly determine if client claimed paid ----
+  // Check invoice.clientClaimsPaid or invoice.claimText, not just notes.
+  const claimText = (invoice.claimText || '').toLowerCase();
+  const notes = (invoice.notes || '').toLowerCase();
   
-  // Case: nothing matched
-// If client claimed "paid" but no match → CONTRADICTED
-// Otherwise → NOT_FOUND
-const clientClaimedPaid = 
-  (invoice.notes || '').toLowerCase().includes('paid') || 
-  invoice.status === 'paid';
+  let clientClaimedPaid = false;
+  
+  // Explicit boolean field takes priority
+  if (typeof invoice.clientClaimsPaid === 'boolean') {
+    clientClaimedPaid = invoice.clientClaimsPaid;
+  } 
+  // Otherwise check claim text for positive claim (avoiding "not paid")
+  else if (claimText) {
+    if (claimText.includes('paid') && !claimText.includes('not paid') && !claimText.includes("haven't paid")) {
+      clientClaimedPaid = true;
+    }
+  }
+  // Fallback to notes
+  else if (notes) {
+    if (notes.includes('paid') && !notes.includes('not paid')) {
+      clientClaimedPaid = true;
+    }
+  }
+  // Check status as last resort
+  else if (invoice.status === 'paid') {
+    clientClaimedPaid = true;
+  }
 
-const finalVerdict = clientClaimedPaid ? 'CONTRADICTED' : 'NOT_FOUND';
-const finalReason = clientClaimedPaid
-  ? 'Client claimed payment but no matching transaction found in statement'
-  : 'No matching transaction found within tolerance';
+  const finalVerdict = clientClaimedPaid ? 'CONTRADICTED' : 'NOT_FOUND';
+  const finalReason = clientClaimedPaid
+    ? 'Client claimed payment but no matching transaction found in statement'
+    : 'No matching transaction found within tolerance';
 
-return {
-  verdict: finalVerdict,
-  confidence: clientClaimedPaid ? 0.6 : 0.1,
-  evidence: {
-    reason: finalReason,
-    matchedRows: [],
-    closestRows: scored.slice(0, 3).map((s) => formatRow(s.txn, s)),
-    searchWindow,
-  },
-};
-
-
-
-
+  return {
+    verdict: finalVerdict,
+    confidence: clientClaimedPaid ? 0.6 : 0.1,
+    evidence: {
+      reason: finalReason,
+      matchedRows: [],
+      closestRows: scored.slice(0, 3).map((s) => formatRow(s.txn, s)),
+      searchWindow,
+    },
+  };
 }
 
 /**
