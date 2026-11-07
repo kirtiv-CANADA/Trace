@@ -1,6 +1,14 @@
 // frontend/src/api.js
-const API_BASE = 'https://trace-bf22.onrender.com';
+//const API_BASE = 'https://trace-bf22.onrender.com';
 
+// localhost testing 
+//export const API_BASE = 'http://localhost:5000';
+export const API_BASE = import.meta.env.DEV
+  ? 'http://localhost:5000'
+  : 'https://trace-bf22.onrender.com';
+
+// live testing
+//export const API_BASE = 'https://trace-bf22.onrender.com';
 export async function fetchStatements() {
   const res = await fetch(`${API_BASE}/api/statements`);
   if (!res.ok) throw new Error('Failed to load statements');
